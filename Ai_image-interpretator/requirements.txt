@@ -1,0 +1,6 @@
+google-genai
+python-dotenv
+SpeechRecognition
+gTTS
+pyaudio
+opencv-python
