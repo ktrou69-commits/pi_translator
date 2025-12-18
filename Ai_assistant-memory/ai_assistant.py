@@ -1,12 +1,16 @@
 import os
 import json
 import sys
+import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# Load environment variables
-load_dotenv()
+# Get absolute path of the script directory
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load environment variables from the script directory
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
@@ -16,7 +20,7 @@ if not API_KEY:
 # Initialize Client
 client = genai.Client(api_key=API_KEY)
 
-MEMORY_FILE = "memory.json"
+MEMORY_FILE = os.path.join(SCRIPT_DIR, "memory.json")
 
 def load_memory():
     """Loads memory from JSON file."""
@@ -61,31 +65,39 @@ def ai_memory_observer(user_input, current_memory):
     Не выдумывай ничего. Только то, что сказал пользователь.
     """
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash", # Using a fast model
-            config=types.GenerateContentConfig(
-                system_instruction=sys_prompt,
-                response_mime_type="application/json"
-            ),
-            contents=user_input
-        )
-        
-        if response.text:
-            data = json.loads(response.text)
-            new_fact = data.get("new_fact")
+    # Retry logic for 503 errors
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash", # Using a fast model
+                config=types.GenerateContentConfig(
+                    system_instruction=sys_prompt,
+                    response_mime_type="application/json"
+                ),
+                contents=user_input
+            )
             
-            if new_fact:
-                # Check for duplicates (simple check)
-                if new_fact not in current_memory["user_facts"]:
-                    print(f"🧠 [Memory AI]: Запомнил -> {new_fact}")
-                    current_memory["user_facts"].append(new_fact)
-                    save_memory(current_memory)
-                    return True
-    except Exception as e:
-        print(f"⚠️ Memory AI Error: {e}")
-    
-    return False
+            if response.text:
+                data = json.loads(response.text)
+                new_fact = data.get("new_fact")
+                
+                if new_fact:
+                    # Check for duplicates (simple check)
+                    if new_fact not in current_memory["user_facts"]:
+                        print(f"🧠 [Memory AI]: Запомнил -> {new_fact}")
+                        current_memory["user_facts"].append(new_fact)
+                        save_memory(current_memory)
+                        return True
+            return False # Success but no new fact
+            
+        except Exception as e:
+            if "503" in str(e) or "overloaded" in str(e).lower():
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+            print(f"⚠️ Memory AI Error: {e}")
+            return False
 
 def ai_chat_friend(user_input, memory_data):
     """
@@ -109,17 +121,25 @@ def ai_chat_friend(user_input, memory_data):
     Используй эти факты в разговоре, чтобы показать, что ты помнишь меня. Если я спрашиваю "что я люблю?", отвечай на основе памяти.
     """
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            config=types.GenerateContentConfig(
-                system_instruction=sys_prompt
-            ),
-            contents=user_input
-        )
-        return response.text
-    except Exception as e:
-        return f"Бро, что-то меня глючит... ({e})"
+    # Retry logic for 503 errors
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                config=types.GenerateContentConfig(
+                    system_instruction=sys_prompt
+                ),
+                contents=user_input
+            )
+            return response.text
+        except Exception as e:
+            if "503" in str(e) or "overloaded" in str(e).lower():
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Model overloaded (503). Retrying in 2s... ({attempt+1}/{max_retries})")
+                    time.sleep(2)
+                    continue
+            return f"Бро, что-то меня глючит... ({e})"
 
 def main():
     print("\n" + "="*50)
