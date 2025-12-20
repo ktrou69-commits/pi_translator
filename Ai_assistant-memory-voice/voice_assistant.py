@@ -205,8 +205,16 @@ def main():
     speak("Привет, бро! Я на связи.", 'ru')
 
     if GPIO_AVAILABLE:
-        button = Button(BUTTON_PIN)
-        print(f"✅ Button initialized on GPIO {BUTTON_PIN} (Pin 11)")
+        try:
+            button = Button(BUTTON_PIN)
+            print(f"✅ Button initialized on GPIO {BUTTON_PIN} (Pin 11)")
+            USE_POLLING = False
+        except Exception as e:
+            print(f"⚠️ Button event error: {e}. Switching to POLLING mode.")
+            # If gpiozero fails, we try a manual check later
+            button = None
+            USE_POLLING = True
+        
         print("👉 HOLD button to speak, RELEASE to process.")
     else:
         print("⚠️ GPIO not available. Falling back to ENTER key.")
@@ -215,18 +223,23 @@ def main():
     try:
         while True:
             if GPIO_AVAILABLE:
-                # Wait for button press
-                button.wait_for_press()
+                if not USE_POLLING:
+                    button.wait_for_press()
+                else:
+                    # Manual polling if edge detection fails
+                    import RPi.GPIO as GPIO
+                    GPIO.setmode(GPIO.BCM)
+                    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+                    while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
+                        time.sleep(0.05)
             else:
                 input("\n[ENTER] Начать запись...")
 
             # --- START RECORDING ---
             print("🎤 Listening...")
-            # Use arecord for precise control (Hold to record)
             cmd = ["arecord", "-D", mic_device, "-f", "S16_LE", "-r", "16000", "-c", "1", TEMP_WAV]
-            # On macOS, arecord doesn't exist, so we might need a fallback for testing
+            
             if sys.platform == "darwin":
-                # Simple mock for macOS testing if needed, or just skip
                 print("☁️ (Simulating recording on macOS...)")
                 time.sleep(2)
                 process = None
@@ -234,8 +247,12 @@ def main():
                 process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             if GPIO_AVAILABLE:
-                # Wait for button release
-                button.wait_for_release()
+                if not USE_POLLING:
+                    button.wait_for_release()
+                else:
+                    import RPi.GPIO as GPIO
+                    while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+                        time.sleep(0.05)
             else:
                 input("🎤 ЗАПИСЬ... [ENTER] Остановить")
 

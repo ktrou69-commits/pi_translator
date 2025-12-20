@@ -9,11 +9,11 @@ sudo apt-get install -y \
     python3-opencv libopencv-dev \
     python3-pyaudio portaudio19-dev \
     mpg123 alsa-utils flac sox libsox-fmt-all \
-    ffmpeg python3-gpiozero
+    ffmpeg python3-gpiozero python3-lgpio
 
 # 2. Python Dependencies
 echo "🐍 Installing Python Libraries..."
-pip install google-genai python-dotenv SpeechRecognition gTTS pyaudio opencv-python deep-translator
+pip install google-genai python-dotenv SpeechRecognition gTTS pyaudio opencv-python deep-translator rpi-lgpio
 
 echo "✅ Done! All dependencies installed."
 echo "📝 Don't forget to create .env files in each project folder!"

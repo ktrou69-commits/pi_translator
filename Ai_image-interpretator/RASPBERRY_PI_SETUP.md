@@ -83,6 +83,9 @@ python image_interpreter.py
 ```
 
 ## 💡 Troubleshooting
+*   **"Failed to add edge detection"**: This is a common issue on Pi OS Bookworm. 
+    *   Fix: `sudo apt install python3-lgpio` and `pip install rpi-lgpio`.
+    *   The script now has a **Polling Fallback**, so it should work even if edge detection fails.
+*   **ALSA Warnings**: If you see many `ALSA lib...` errors, **ignore them**. This is normal on Pi Lite. As long as you see your USB Mic in the list, it will work.
 *   **"Connection refused"**: PulseAudio is fighting BlueALSA. Try `pulseaudio -k` (kill) or `pulseaudio --start`.
 *   **Mic Silence**: Check `alsamixer` again. USB mics often default to 0 volume.
-*   **Slow TTS**: The script tries to speed up audio. If `sox` fails, it falls back to normal speed. Ensure `libsox-fmt-all` is installed.
