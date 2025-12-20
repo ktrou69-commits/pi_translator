@@ -1,0 +1,10 @@
+google-genai
+python-dotenv
+SpeechRecognition
+gTTS
+pyaudio
+opencv-python
+deep-translator
+Pillow
+gpiozero
+rpi-lgpio

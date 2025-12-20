@@ -13,7 +13,7 @@ sudo apt-get install -y \
 
 # 2. Python Dependencies
 echo "🐍 Installing Python Libraries..."
-pip install google-genai python-dotenv SpeechRecognition gTTS pyaudio opencv-python deep-translator rpi-lgpio
+pip install -r requirements.txt
 
 echo "✅ Done! All dependencies installed."
 echo "📝 Don't forget to create .env files in each project folder!"
