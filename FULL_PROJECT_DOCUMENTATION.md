@@ -61,6 +61,27 @@
     2.  **Chat AI:** Получает промпт + контекст из `memory.json` -> генерирует ответ.
 *   **Файлы:** `ai_assistant.py`, `memory.json`, `.env`.
 
+### 🚀 Unified App & Autostart
+To save RAM and simplify usage, use `main_app.py`. It combines all features into one process.
+
+### How to use:
+1.  **Run manually**:
+    ```bash
+    python3 main_app.py
+    ```
+2.  **Setup Autostart**:
+    ```bash
+    sudo cp ai_keychain.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable ai_keychain.service
+    sudo systemctl start ai_keychain.service
+    ```
+
+### RAM Optimization
+*   **Single Process**: ~150MB RAM (vs ~450MB for 3 separate apps).
+*   **Polling Mode**: Low CPU usage for button detection.
+*   **Shared Resources**: Shared Gemini client and memory access.
+
 ### 2. Ai_assistant-memory-voice
 *   **Путь:** `/Ai_assistant-memory-voice`
 *   **STT (Input):** `SpeechRecognition` (Google Web API).

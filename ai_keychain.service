@@ -1,0 +1,14 @@
+[Unit]
+Description=AI Keychain Unified Application
+After=network.target sound.target bluetooth.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/assistant/pi_translator/main_app.py
+WorkingDirectory=/home/assistant/pi_translator
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=assistant
+
+[Install]
+WantedBy=multi-user.target
