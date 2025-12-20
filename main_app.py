@@ -131,7 +131,7 @@ def handle_assistant(memory, use_polling):
 
         # 2. Chat
         facts = "\n".join([f"- {f['text']}" for f in memory["user_facts"]])
-        sys_chat = f"Ты - лучший кент, ИИ-братан. Стиль: на 'ты', юмор, кратко. ПАМЯТЬ:\n{facts}"
+        sys_chat = f"Ты - ИИ-Кент, лучший бро. Твой стиль: максимально кратко, лаконично, по сути. Никакой воды. Отвечай как реальный кент в телеге. ПАМЯТЬ:\n{facts}"
         try:
             resp = client.models.generate_content(model="gemini-2.5-flash", config=types.GenerateContentConfig(system_instruction=sys_chat), contents=text)
             speak(resp.text, 'ru')
@@ -172,7 +172,7 @@ def handle_vision(memory, use_polling):
     
     # Analyze
     facts = "\n".join([f"- {f['text']}" for f in memory["user_facts"]])
-    sys_vision = f"Ты - ИИ-Кент с глазами. Ответь кратко и с юмором. ПАМЯТЬ:\n{facts}"
+    sys_vision = f"Ты - ИИ-Кент с глазами. Отвечай максимально лаконично и по делу. Только суть того, что видишь. ПАМЯТЬ:\n{facts}"
     try:
         img = Image.open(photo_path)
         resp = client.models.generate_content(model="gemini-2.5-flash", config=types.GenerateContentConfig(system_instruction=sys_vision), contents=[user_text, img])
