@@ -206,24 +206,22 @@ def main():
                 if GPIO.input(BTN_ASSISTANT_PIN) == GPIO.LOW:
                     handle_assistant(memory, True)
                 elif GPIO.input(BTN_TRANSLATOR_PIN) == GPIO.LOW:
-                    # Check for double click or hold
-                    start = time.time()
-                    while GPIO.input(BTN_TRANSLATOR_PIN) == GPIO.LOW: time.sleep(0.01)
-                    duration = time.time() - start
-                    
-                    if duration < 0.3: # Possible double click
+                    # 1. Wait a bit to see if it's a HOLD or a CLICK
+                    time.sleep(0.2)
+                    if GPIO.input(BTN_TRANSLATOR_PIN) == GPIO.LOW:
+                        # Still held -> Start recording (Hold-to-record)
+                        handle_translator(True)
+                    else:
+                        # Released quickly -> Check for second click (Double-click)
                         time.sleep(0.2)
                         if GPIO.input(BTN_TRANSLATOR_PIN) == GPIO.LOW:
                             global current_trans_idx
                             current_trans_idx = (current_trans_idx + 1) % 2
                             mode = trans_modes[current_trans_idx]
                             speak(f"Режим {mode['label']}", 'ru')
-                        else:
-                            # Single click - do nothing or record? 
-                            # User said: Hold to record, Double click to toggle.
-                            pass
-                    else: # Hold
-                        handle_translator(True)
+                            # Wait for release of the second click
+                            while GPIO.input(BTN_TRANSLATOR_PIN) == GPIO.LOW:
+                                time.sleep(0.05)
                 
                 elif GPIO.input(BTN_VISION_PIN) == GPIO.LOW:
                     handle_vision(memory, True)
