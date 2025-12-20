@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.wav
+*.mp3
+Ai_image-interpretator/photos/
+Ai_assistant-memory-voice/memory.json
+Ai_assistant-memory/memory.json
+temp_input.wav
+output.mp3
+output.wav
