@@ -12,6 +12,12 @@ from google.genai import types
 from gtts import gTTS
 from PIL import Image
 
+try:
+    from gpiozero import Button
+    GPIO_AVAILABLE = True
+except (ImportError, OSError):
+    GPIO_AVAILABLE = False
+
 # Get absolute path of the script directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -30,6 +36,8 @@ client = genai.Client(api_key=API_KEY)
 MEMORY_FILE = os.path.join(SCRIPT_DIR, "../Ai_assistant-memory-voice/memory.json")
 ALSA_DEVICE = "bluealsa" # For Pi Lite Bluetooth
 TTS_SPEED = 1.25
+BUTTON_PIN = 22          # GPIO 22 (Pin 15)
+TEMP_WAV = os.path.join(SCRIPT_DIR, "input.wav")
 
 # --- MEMORY FUNCTIONS ---
 def load_memory():
@@ -202,7 +210,24 @@ def main():
     memory = load_memory()
     r = sr.Recognizer()
     
-    speak("Я готов. Нажми Enter, чтобы сделать фото.", 'ru')
+    # Get Mic Device for arecord (e.g., "hw:1,0")
+    mic_device = os.getenv("MIC_DEVICE", "hw:1,0")
+
+    speak("Я готов. Нажми кнопку, чтобы сделать фото.", 'ru')
+
+    if GPIO_AVAILABLE:
+        try:
+            button = Button(BUTTON_PIN)
+            print(f"✅ Button 3 initialized on GPIO {BUTTON_PIN} (Pin 15)")
+            USE_POLLING = False
+        except Exception as e:
+            print(f"⚠️ Button error: {e}. Switching to POLLING mode.")
+            button = None
+            USE_POLLING = True
+        print("👉 CLICK to photo, HOLD to record voice.")
+    else:
+        print("⚠️ GPIO not available. Use ENTER to photo, then ENTER to record.")
+        USE_POLLING = False
 
     while True:
         try:
@@ -210,32 +235,84 @@ def main():
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             photo_filename = os.path.join(PHOTOS_DIR, f"photo_{timestamp}.jpg")
 
+            if GPIO_AVAILABLE:
+                if not USE_POLLING:
+                    button.wait_for_press()
+                else:
+                    import RPi.GPIO as GPIO
+                    GPIO.setmode(GPIO.BCM)
+                    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+                    while GPIO.input(BUTTON_PIN) == GPIO.HIGH:
+                        time.sleep(0.05)
+            else:
+                input("\n📸 Press ENTER to snap photo...")
+
             # STEP 1: SNAP PHOTO
-            input("\n📸 Press ENTER to snap photo (or Ctrl+C to exit)...")
-            
             if not take_photo(photo_filename, camera_index):
                 speak("Не могу сделать фото, проверь камеру.", 'ru')
                 continue
             
-            # STEP 2: ASK QUESTION
-            input("🎤 Press ENTER to ask question...")
+            # STEP 2: WAIT FOR HOLD OR NEXT CLICK
+            print("🎤 Waiting for HOLD to record voice (or CLICK for new photo)...")
+            
+            # We need to detect if the user HOLDS the button now
+            # If they release quickly, it was just a photo.
+            # If they keep holding, we start recording.
+            
+            is_holding = False
+            start_time = time.time()
+            
+            if GPIO_AVAILABLE:
+                # Wait a bit to see if it's a hold
+                time.sleep(0.3) 
+                if not USE_POLLING:
+                    if button.is_pressed: is_holding = True
+                else:
+                    if GPIO.input(BUTTON_PIN) == GPIO.LOW: is_holding = True
+            else:
+                # On PC, we just ask
+                ans = input("🎤 Hold to record? (y/n): ").lower()
+                if ans == 'y': is_holding = True
 
-            # 3. Listen
-            with sr.Microphone(device_index=mic_index) as source:
+            user_text = "Что ты видишь на фото?" # Default
+
+            if is_holding:
+                # --- START RECORDING ---
                 print("🎤 Listening...")
-                r.adjust_for_ambient_noise(source, duration=0.5) # Faster adjust
+                cmd = ["arecord", "-D", mic_device, "-f", "S16_LE", "-r", "16000", "-c", "1", TEMP_WAV]
                 
+                if sys.platform == "darwin":
+                    print("☁️ (Simulating recording on macOS...)")
+                    time.sleep(2)
+                    process = None
+                else:
+                    process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                if GPIO_AVAILABLE:
+                    if not USE_POLLING:
+                        button.wait_for_release()
+                    else:
+                        while GPIO.input(BUTTON_PIN) == GPIO.LOW:
+                            time.sleep(0.05)
+                else:
+                    input("🎤 ЗАПИСЬ... [ENTER] Остановить")
+
+                # --- STOP RECORDING ---
+                if process:
+                    process.terminate()
+                    process.wait()
+                
+                # --- STT ---
                 try:
-                    audio = r.listen(source, timeout=5)
-                    print("⏳ Recognizing...")
-                    user_text = r.recognize_google(audio, language="ru-RU")
-                    print(f"🗣️  You: {user_text}")
-                except sr.WaitTimeoutError:
-                    print("⚠️ Silence...")
-                    user_text = "Что ты видишь на фото?" 
-                except sr.UnknownValueError:
-                     print("⚠️ Unintelligible...")
-                     user_text = "Опиши, что на фото."
+                    if os.path.exists(TEMP_WAV):
+                        with sr.AudioFile(TEMP_WAV) as source:
+                            audio = r.record(source)
+                        user_text = r.recognize_google(audio, language="ru-RU")
+                        print(f"🗣️  You: {user_text}")
+                except Exception as e:
+                    print(f"⚠️ STT Error: {e}")
+                finally:
+                    if os.path.exists(TEMP_WAV): os.remove(TEMP_WAV)
 
             # 4. Analyze
             print("🤔 Thinking...")

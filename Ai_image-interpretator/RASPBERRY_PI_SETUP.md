@@ -34,9 +34,10 @@ mpg123 -o alsa -a bluealsa "test.mp3"
     Look for "card 1" or similar. Usually it's `hw:1,0`.
 
 ### Physical Buttons (Control)
-*   **Pin 6**: Connect to one side of BOTH buttons (GND).
+*   **Pin 6**: Connect to one side of ALL three buttons (GND).
 *   **Pin 11 (GPIO 17)**: Button 1 (Voice AI Bro).
 *   **Pin 13 (GPIO 27)**: Button 2 (Voice Translator).
+*   **Pin 15 (GPIO 22)**: Button 3 (Image Interpreter).
 *   **Logic**: The scripts use internal pull-up, so no resistors are needed.
 
 3.  **Adjust Volume:**

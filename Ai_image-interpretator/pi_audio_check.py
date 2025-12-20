@@ -81,6 +81,13 @@ def check_button():
         b2.wait_for_press(timeout=10)
         if b2.is_pressed: print("✅ Button 2: OK")
         else: print("❌ Button 2: Timeout")
+
+        print("\n3. Testing Button 3 (GPIO 22 / Pin 15)...")
+        b3 = Button(22)
+        print("Waiting for Button 3 press... (10s timeout)")
+        b3.wait_for_press(timeout=10)
+        if b3.is_pressed: print("✅ Button 3: OK")
+        else: print("❌ Button 3: Timeout")
         
     except Exception as e:
         print(f"⚠️ Button check failed: {e}")
