@@ -9,7 +9,7 @@ sudo apt-get install -y \
     python3-opencv libopencv-dev \
     python3-pyaudio portaudio19-dev \
     mpg123 alsa-utils flac sox libsox-fmt-all \
-    ffmpeg
+    ffmpeg python3-gpiozero
 
 # 2. Python Dependencies
 echo "🐍 Installing Python Libraries..."

@@ -31,7 +31,12 @@ mpg123 -o alsa -a bluealsa "test.mp3"
     ```bash
     arecord -l
     ```
-    Look for "card 1" or similar.
+    Look for "card 1" or similar. Usually it's `hw:1,0`.
+
+### Physical Button (Control)
+*   **Pin 6**: Connect to one side of the button (GND).
+*   **Pin 11 (GPIO 17)**: Connect to the other side of the button.
+*   **Logic**: The script uses internal pull-up, so no resistor is needed.
 
 3.  **Adjust Volume:**
     ```bash
@@ -67,7 +72,8 @@ mpg123 -o alsa -a bluealsa "test.mp3"
     Content:
     ```ini
     GEMINI_API_KEY=your_key_here
-    MIC_INDEX=1  # Change this to what the diagnostic script showed!
+    MIC_INDEX=1   # For SpeechRecognition
+    MIC_DEVICE=hw:1,0  # For arecord (Hold-to-record)
     CAMERA_INDEX=0
     ```
 

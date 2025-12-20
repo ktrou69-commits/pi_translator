@@ -9,6 +9,12 @@ from google import genai
 from google.genai import types
 from gtts import gTTS
 
+try:
+    from gpiozero import Button
+    GPIO_AVAILABLE = True
+except (ImportError, OSError):
+    GPIO_AVAILABLE = False
+
 # Get absolute path of the script directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,6 +31,8 @@ client = genai.Client(api_key=API_KEY)
 
 MEMORY_FILE = os.path.join(SCRIPT_DIR, "memory.json")
 ALSA_DEVICE = "bluealsa" # For Pi Lite Bluetooth
+BUTTON_PIN = 17          # GPIO 17 (Pin 11)
+TEMP_WAV = os.path.join(SCRIPT_DIR, "input.wav")
 
 import datetime
 
@@ -189,45 +197,81 @@ def main():
 
     memory = load_memory()
     r = sr.Recognizer()
-    r.dynamic_energy_threshold = True
+    
+    # Get Mic Device for arecord (e.g., "hw:1,0")
+    mic_device = os.getenv("MIC_DEVICE", "hw:1,0")
 
     # Initial greeting
     speak("Привет, бро! Я на связи.", 'ru')
 
+    if GPIO_AVAILABLE:
+        button = Button(BUTTON_PIN)
+        print(f"✅ Button initialized on GPIO {BUTTON_PIN} (Pin 11)")
+        print("👉 HOLD button to speak, RELEASE to process.")
+    else:
+        print("⚠️ GPIO not available. Falling back to ENTER key.")
+        print("👉 Press ENTER to speak, then ENTER again to stop.")
+
     try:
-        # Use specific mic if set, else default
-        with sr.Microphone(device_index=mic_index) as source:
-            print("🎤 Calibrating noise...")
-            r.adjust_for_ambient_noise(source, duration=2)
-            print("✅ Ready! Speak.")
-            
-            while True:
-                try:
-                    print("\n👂 Listening...")
-                    audio = r.listen(source, timeout=None)
-                    
-                    print("⏳ Recognizing...")
+        while True:
+            if GPIO_AVAILABLE:
+                # Wait for button press
+                button.wait_for_press()
+            else:
+                input("\n[ENTER] Начать запись...")
+
+            # --- START RECORDING ---
+            print("🎤 Listening...")
+            # Use arecord for precise control (Hold to record)
+            cmd = ["arecord", "-D", mic_device, "-f", "S16_LE", "-r", "16000", "-c", "1", TEMP_WAV]
+            # On macOS, arecord doesn't exist, so we might need a fallback for testing
+            if sys.platform == "darwin":
+                # Simple mock for macOS testing if needed, or just skip
+                print("☁️ (Simulating recording on macOS...)")
+                time.sleep(2)
+                process = None
+            else:
+                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            if GPIO_AVAILABLE:
+                # Wait for button release
+                button.wait_for_release()
+            else:
+                input("🎤 ЗАПИСЬ... [ENTER] Остановить")
+
+            # --- STOP RECORDING ---
+            if process:
+                process.terminate()
+                process.wait()
+            print("⏳ Processing...")
+
+            # --- STT ---
+            try:
+                if os.path.exists(TEMP_WAV):
+                    with sr.AudioFile(TEMP_WAV) as source:
+                        audio = r.record(source)
                     user_text = r.recognize_google(audio, language="ru-RU")
                     print(f"🗣️  You: {user_text}")
 
-                    if not user_text: continue
+                    if user_text:
+                        # 1. Memory AI
+                        ai_memory_observer(user_text, memory)
+                        
+                        # 2. Chat AI
+                        ai_response = ai_chat_friend(user_text, memory)
+                        print(f"🤖 AI: {ai_response}")
+                        
+                        # 3. Speak Response
+                        speak(ai_response, 'ru')
+                else:
+                    print("⚠️ No audio recorded.")
 
-                    # 1. Memory AI
-                    ai_memory_observer(user_text, memory)
-                    
-                    # 2. Chat AI
-                    ai_response = ai_chat_friend(user_text, memory)
-                    print(f"🤖 AI: {ai_response}")
-                    
-                    # 3. Speak Response
-                    speak(ai_response, 'ru')
-
-                except sr.UnknownValueError:
-                    print("🤷 Не расслышал...")
-                except sr.RequestError:
-                    print("⚠️ Ошибка сети (STT)")
-                except Exception as e:
-                    print(f"❌ Error: {e}")
+            except sr.UnknownValueError:
+                print("🤷 Не расслышал...")
+            except Exception as e:
+                print(f"❌ Error: {e}")
+            finally:
+                if os.path.exists(TEMP_WAV): os.remove(TEMP_WAV)
                     
     except KeyboardInterrupt:
         print("\n👋 Bye!")
