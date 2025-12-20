@@ -64,19 +64,26 @@ def check_speaker():
     if os.path.exists("test_audio.wav"): os.remove("test_audio.wav")
 
 def check_button():
-    print_header("🔘 BUTTON CHECK (GPIO 17 / Pin 11)")
+    print_header("🔘 BUTTON CHECK")
     try:
         from gpiozero import Button
-        button = Button(17)
-        print("Waiting for button press... (Press it now!)")
-        button.wait_for_press(timeout=10)
-        if button.is_pressed:
-            print("✅ Button press DETECTED!")
-        else:
-            print("❌ Timeout: No button press detected.")
+        
+        print("1. Testing Button 1 (GPIO 17 / Pin 11)...")
+        b1 = Button(17)
+        print("Waiting for Button 1 press... (10s timeout)")
+        b1.wait_for_press(timeout=10)
+        if b1.is_pressed: print("✅ Button 1: OK")
+        else: print("❌ Button 1: Timeout")
+        
+        print("\n2. Testing Button 2 (GPIO 27 / Pin 13)...")
+        b2 = Button(27)
+        print("Waiting for Button 2 press... (10s timeout)")
+        b2.wait_for_press(timeout=10)
+        if b2.is_pressed: print("✅ Button 2: OK")
+        else: print("❌ Button 2: Timeout")
+        
     except Exception as e:
         print(f"⚠️ Button check failed: {e}")
-        print("Ensure 'gpiozero' is installed and you are on a Raspberry Pi.")
 
 def main():
     print("🍓 Raspberry Pi Audio Diagnostic Tool 🍓")
