@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 class BaseBackend(ABC):
     @abstractmethod
-    def chat_stream(self, user_input, memory_data):
+    def chat_stream(self, user_input, memory_data, tools=None):
         """Generates full sentences from the LLM stream."""
         pass
 

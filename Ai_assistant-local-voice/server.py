@@ -9,6 +9,7 @@ from app.engines.tts_edge import EdgeEngine
 from app.backends.ollama import OllamaBackend
 from app.backends.gemini import GeminiBackend
 from app.core.memory import MemoryManager
+from app.core.executor import executor, TOOL_DEFINITIONS
 import asyncio
 
 # --- ARGPARSE ---
@@ -75,8 +76,24 @@ class ChatRequest(BaseModel):
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     memory = memory_manager.load_memory()
     background_tasks.add_task(backend.memory_observer, request.user_text, memory, memory_manager.save_memory)
-    full_response = " ".join(list(backend.chat_stream(request.user_text, memory)))
-    return {"response": full_response}
+    
+    response_items = []
+    for item in backend.chat_stream(request.user_text, memory, tools=TOOL_DEFINITIONS):
+        if isinstance(item, str):
+            response_items.append(item)
+        else:
+            # Execute tool
+            func_name = item.name
+            func_args = item.args
+            if func_name == "open_url":
+                executor.open_url(**func_args)
+            elif func_name == "open_path":
+                executor.open_path(**func_args)
+            elif func_name == "run_app":
+                executor.run_app(**func_args)
+            response_items.append(f"[🛠️ {func_name}]")
+            
+    return {"response": " ".join(response_items)}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -114,18 +131,35 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.send_json({"user_transcription": user_text})
                         
                         memory = memory_manager.load_memory()
-                        await websocket.send_json({"role": "assistant", "type": "audio", "start": True})
                         
                         print(f"🤖 AI ({args.profile}) is generating response...")
-                        for sentence in backend.chat_stream(user_text, memory):
-                            print(f"⏩ Sending sentence: {sentence}")
-                            await websocket.send_json({"assistant_text": sentence})
-                            
-                            chunk_count = 0
-                            async for chunk in tts.engine.async_generate(sentence):
-                                await websocket.send_bytes(chunk)
-                                chunk_count += 1
-                            print(f"🔊 Sent {chunk_count} audio chunks for sentence.")
+                        for response_item in backend.chat_stream(user_text, memory, tools=TOOL_DEFINITIONS):
+                            if isinstance(response_item, str):
+                                # This is text for TTS
+                                print(f"⏩ Sending sentence: {response_item}")
+                                await websocket.send_json({"assistant_text": response_item})
+                                
+                                chunk_count = 0
+                                async for chunk in tts.engine.async_generate(response_item):
+                                    await websocket.send_bytes(chunk)
+                                    chunk_count += 1
+                                print(f"🔊 Sent {chunk_count} audio chunks for sentence.")
+                            else:
+                                # This is a FunctionCall object from the LLM
+                                func_name = response_item.name
+                                func_args = response_item.args
+                                print(f"🛠️  Model requested tool: {func_name}({func_args})")
+                                
+                                # Execute action
+                                if func_name == "open_url":
+                                    executor.open_url(**func_args)
+                                elif func_name == "open_path":
+                                    executor.open_path(**func_args)
+                                elif func_name == "run_app":
+                                    executor.run_app(**func_args)
+                                
+                                # We can send a notification to the client that a tool was used
+                                await websocket.send_json({"assistant_text": f"[🛠️ {func_name}]"})
                         
                         await websocket.send_json({"end": True})
                         print("✅ Response sent completely.")

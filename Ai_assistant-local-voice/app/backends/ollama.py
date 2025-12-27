@@ -8,7 +8,7 @@ class OllamaBackend(BaseBackend):
     def __init__(self, model_name="qwen2.5-coder:3b"):
         self.model_name = model_name
 
-    def chat_stream(self, user_input, memory_data):
+    def chat_stream(self, user_input, memory_data, tools=None):
         facts_list = "\n".join([f"- [{f['created_at']}] {f['text']}" for f in memory_data.get("user_facts", [])])
         current_date = datetime.date.today().strftime("%Y-%m-%d")
         

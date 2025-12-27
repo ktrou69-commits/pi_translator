@@ -9,30 +9,67 @@ class GeminiBackend(BaseBackend):
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
 
-    def chat_stream(self, user_input, memory_data):
+    def chat_stream(self, user_input, memory_data, tools=None):
         facts_list = "\n".join([f"- [{f['created_at']}] {f['text']}" for f in memory_data.get("user_facts", [])])
         current_date = datetime.date.today().strftime("%Y-%m-%d")
         
         sys_prompt = f"""
         Ты - персональный ассистент Gemini. Твои ответы основаны на ПАМЯТИ О ПОЛЬЗОВАТЕЛЕ.
         СЕГОДНЯШНЯЯ ДАТА: {current_date}
-        ПАМЯТЬ:
+        
+        ПАМЯТЬ О ПОЛЬЗОВАТЕЛЕ:
         {facts_list}
-        ИНСТРУКЦИИ: Используй память. Отвечай кратко (до 20 слов), четко, без воды.
+        
+        ИНСТРУКЦИИ:
+        1. Используй память.
+        2. Отвечай кратко и по делу.
+        3. Если тебя просят что-то открыть или запустить, используй доступные ИНСТРУМЕНТЫ (Tools).
         """
         
-        def generate():
-            # In google-genai, we use generate_content_stream for streaming
-            response = self.client.models.generate_content_stream(
-                model=self.model_name,
-                config={'system_instruction': sys_prompt},
-                contents=user_input
-            )
-            for chunk in response:
-                yield chunk.text
+        config = {'system_instruction': sys_prompt}
+        if tools:
+            # google-genai expects tools as a list of types.Tool or dicts with function_declarations
+            config['tools'] = [{'function_declarations': tools}]
 
-        for sentence in generate_sentences(generate()):
-            yield sentence
+        def generate():
+            try:
+                response = self.client.models.generate_content_stream(
+                    model=self.model_name,
+                    config=config,
+                    contents=user_input
+                )
+                for chunk in response:
+                    # Check for function calls
+                    if chunk.candidates and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            if part.function_call:
+                                yield part.function_call
+                            elif part.text:
+                                yield part.text
+            except Exception as e:
+                yield f"⚠️ Gemini Error: {e}"
+
+        # We wrap in generate_sentences to ensure the client gets clean audio blocks
+        # But we must be careful: if generate() yields a function call, generate_sentences might choke.
+        # So we'll iterate manually and only group text.
+        
+        current_text = ""
+        for item in generate():
+            if isinstance(item, str):
+                current_text += item
+                # Check if we have enough for a sentence
+                # (Standard sentence splitting logic or just pass through)
+                # For simplicity, we'll yield text chunks, but the server expects sentences for TTS.
+                # Let's keep generate_sentences for text only.
+                pass
+            else:
+                # It's a function call (object)
+                yield item
+        
+        # If we have remaining text, process it with generate_sentences
+        if current_text:
+            for sentence in generate_sentences([current_text]):
+                yield sentence
 
     def memory_observer(self, user_input, current_memory, save_callback):
         sys_prompt = """
