@@ -40,12 +40,12 @@ Multi-threaded Python application managing audio I/O:
 Centrally manages AI processing pipeline:
 - **Framework**: `FastAPI` with WebSocket support.
 - **STT**: `RealtimeSTT` (faster-whisper) processes audio chunks into text upon completion of speech.
-- **LLM Context**: Supports multiple backends:
+- **LLM Context**: Supports multiple backends in `app/backends/`:
     - **Ollama**: Local processing (default: `qwen2.5-coder:3b`).
     - **Gemini**: API-based processing (default: `gemini-2.5-flash`).
 - **Observer Pattern**: A background task analyzes user input to extract new facts and update `memory.json`.
 
-### C. EdgeEngine TTS (`edge_engine.py`)
+### C. EdgeEngine TTS (`app/engines/tts_edge.py`)
 A custom high-performance TTS engine that bridges `EdgeTTS` and `RealtimeTTS`:
 - **Optimization**: Instead of saving MP3 files, it streams raw audio chunks.
 - **Transformation Pipeline**: 

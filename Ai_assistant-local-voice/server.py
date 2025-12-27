@@ -5,8 +5,10 @@ import json
 import datetime
 import argparse
 from dotenv import load_dotenv
-from edge_engine import EdgeEngine
-from backends import OllamaBackend, GeminiBackend
+from app.engines.tts_edge import EdgeEngine
+from app.backends.ollama import OllamaBackend
+from app.backends.gemini import GeminiBackend
+from app.core.memory import MemoryManager
 import asyncio
 
 # --- ARGPARSE ---
@@ -22,6 +24,7 @@ if not os.path.exists(ENV_FILE):
 load_dotenv(ENV_FILE)
 
 MEMORY_FILE = os.path.join(SCRIPT_DIR, "memory.json")
+memory_manager = MemoryManager(MEMORY_FILE)
 
 # --- BACKEND SELECTION ---
 if args.profile == "gemini":
@@ -68,25 +71,10 @@ app = FastAPI(title="AI Assistant Server", lifespan=lifespan)
 class ChatRequest(BaseModel):
     user_text: str
 
-# --- MEMORY FUNCTIONS ---
-def load_memory():
-    if not os.path.exists(MEMORY_FILE):
-        return {"user_facts": []}
-    try:
-        with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data
-    except (json.JSONDecodeError, KeyError):
-        return {"user_facts": []}
-
-def save_memory(memory_data):
-    with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(memory_data, f, ensure_ascii=False, indent=2)
-
 @app.post("/chat")
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
-    memory = load_memory()
-    background_tasks.add_task(backend.memory_observer, request.user_text, memory, save_memory)
+    memory = memory_manager.load_memory()
+    background_tasks.add_task(backend.memory_observer, request.user_text, memory, memory_manager.save_memory)
     full_response = " ".join(list(backend.chat_stream(request.user_text, memory)))
     return {"response": full_response}
 
@@ -125,7 +113,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         print(f"🗣️  User: {user_text}")
                         await websocket.send_json({"user_transcription": user_text})
                         
-                        memory = load_memory()
+                        memory = memory_manager.load_memory()
                         await websocket.send_json({"role": "assistant", "type": "audio", "start": True})
                         
                         print(f"🤖 AI ({args.profile}) is generating response...")
@@ -141,7 +129,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         
                         await websocket.send_json({"end": True})
                         print("✅ Response sent completely.")
-                        backend.memory_observer(user_text, memory, save_memory)
+                        backend.memory_observer(user_text, memory, memory_manager.save_memory)
                 
     except WebSocketDisconnect:
         print("👋 WebSocket connection closed")
