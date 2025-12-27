@@ -1,0 +1,14 @@
+ollama
+python-dotenv
+SpeechRecognition
+websocket-client
+RealtimeTTS
+RealtimeSTT
+faster-whisper
+torch
+edge-tts
+pyaudio
+fastapi
+uvicorn
+pynput
+requests
