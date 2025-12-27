@@ -46,3 +46,12 @@ Streaming: Server logs show 🎤 Recording started... and 🛑 Recording ended. 
 Memory: The assistant still uses 
 memory.json
  to remember your facts.
+
+
+ lsof -t -i :8000 | xargs kill -9
+
+ MIC_INDEX=0
+MIC_DEVICE=hw:1,0
+OLLAMA_MODEL=qwen2.5-coder:3b
+MIC_AUDIO_INDEX=2
+GEMINI_API_KEY=

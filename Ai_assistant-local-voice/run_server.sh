@@ -1,3 +1,3 @@
 #!/bin/bash
 # run_server.sh
-python3 server.py
+python3 server.py --profile local
