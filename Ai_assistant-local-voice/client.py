@@ -14,6 +14,15 @@ if not os.path.exists(ENV_FILE):
     ENV_FILE = os.path.join(SCRIPT_DIR, ".env")
 load_dotenv(ENV_FILE)
 
+# Audio utilities fallback for Python 3.13
+try:
+    import audioop
+except ImportError:
+    try:
+        import audioop_lts as audioop
+    except ImportError:
+        audioop = None
+
 SERVER_IP = os.getenv("SERVER_IP", "localhost")
 WS_URL = f"ws://{SERVER_IP}:8000/ws"
 
@@ -28,6 +37,7 @@ PLAYBACK_RATE = 24000
 
 class StreamingVoiceClient:
     def __init__(self):
+        global RATE
         self.p = pyaudio.PyAudio()
         self.ws = None
         self.connected = False
@@ -35,15 +45,33 @@ class StreamingVoiceClient:
         self.is_playing = False
         self.running = True
 
-        # Input stream (mic)
-        self.input_stream = self.p.open(
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RATE,
-            input=True,
-            frames_per_buffer=CHUNK,
-            start=False
-        )
+        # Input stream (mic) - Robust initialization
+        rates_to_try = [RATE, 44100, 48000]
+        last_error = "Unknown"
+        self.input_stream = None
+        
+        for r in rates_to_try:
+            try:
+                print(f"🎤 Попытка инициализации микрофона: {r}Hz...")
+                self.input_stream = self.p.open(
+                    format=FORMAT,
+                    channels=CHANNELS,
+                    rate=r,
+                    input=True,
+                    frames_per_buffer=CHUNK,
+                    start=False
+                )
+                print(f"✅ Микрофон готов ({r}Hz)!")
+                RATE = r
+                break
+            except Exception as e:
+                last_error = e
+                continue
+        
+        if not self.input_stream:
+            print(f"❌ Ошибка инициализации микрофона: {last_error}")
+            self.running = False
+            return
 
         # Output stream (speakers)
         self.output_stream = self.p.open(
@@ -131,11 +159,19 @@ class StreamingVoiceClient:
         self.input_stream.stop_stream()
 
     def recording_loop(self):
+        # Target 16k for server
+        TARGET_RATE = 16000
         while self.is_recording:
             try:
-                data = self.input_stream.read(CHUNK, exception_on_overflow=False)
+                raw_data = self.input_stream.read(CHUNK, exception_on_overflow=False)
+                data_to_send = raw_data
+                
+                # Resampling if RATE is not 16000
+                if RATE != TARGET_RATE and audioop:
+                    data_to_send, _ = audioop.ratecv(raw_data, 2, 1, RATE, TARGET_RATE, None)
+                
                 if self.connected:
-                    self.ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
+                    self.ws.send(data_to_send, opcode=websocket.ABNF.OPCODE_BINARY)
             except Exception as e:
                 print(f"Error in recording loop: {e}")
                 break

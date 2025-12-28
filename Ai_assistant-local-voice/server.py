@@ -8,13 +8,14 @@ from dotenv import load_dotenv
 from app.engines.tts_edge import EdgeEngine
 from app.backends.ollama import OllamaBackend
 from app.backends.gemini import GeminiBackend
+from app.backends.groq import GroqBackend
 from app.core.memory import MemoryManager
 from app.core.executor import executor, TOOL_DEFINITIONS
 import asyncio
 
 # --- ARGPARSE ---
 parser = argparse.ArgumentParser(description="AI Assistant Server")
-parser.add_argument("--profile", type=str, choices=["local", "gemini"], default="local", help="LLM Profile to use")
+parser.add_argument("--profile", type=str, choices=["local", "gemini", "groq"], default="local", help="LLM Profile to use")
 args, unknown = parser.parse_known_args()
 
 # Load environment
@@ -35,6 +36,13 @@ if args.profile == "gemini":
         exit(1)
     backend = GeminiBackend(api_key=GEMINI_KEY)
     print("✨ Using Profile: GEMINI")
+elif args.profile == "groq":
+    GROQ_KEY = os.getenv("GROQ_API_KEY")
+    if not GROQ_KEY:
+        print("❌ Error: GROQ_API_KEY not found in environment!")
+        exit(1)
+    backend = GroqBackend(api_key=GROQ_KEY)
+    print("⚡ Using Profile: GROQ")
 else:
     MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:3b")
     backend = OllamaBackend(model_name=MODEL_NAME)
@@ -50,7 +58,7 @@ async def lifespan(app: FastAPI):
     
     print("🎙️ Initializing Realtime STT (Whisper) on Server...")
     app.state.stt_recorder = AudioToTextRecorder(
-        model="base",
+        model="small",
         language="ru",
         spinner=False,
         use_microphone=False

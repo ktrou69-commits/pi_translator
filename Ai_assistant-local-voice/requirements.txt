@@ -13,3 +13,4 @@ uvicorn
 pynput
 requests
 google-genai
+groq

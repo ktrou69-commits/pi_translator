@@ -42,7 +42,8 @@ Centrally manages AI processing pipeline:
 - **STT**: `RealtimeSTT` (faster-whisper) processes audio chunks into text upon completion of speech.
 - **LLM Context**: Supports multiple backends in `app/backends/`:
     - **Ollama**: Local processing (default: `qwen2.5-coder:3b`).
-    - **Gemini**: API-based processing (default: `gemini-2.5-flash`).
+    - **Gemini**: API-based processing (default: `gemini-2.0-flash`).
+    - **Groq**: High-speed API processing (default: `llama-3.3-70b-versatile`).
 - **Observer Pattern**: A background task analyzes user input to extract new facts and update `memory.json`.
 
 ### C. EdgeEngine TTS (`app/engines/tts_edge.py`)
@@ -78,7 +79,7 @@ The system doesn't just "chat"; it learns.
 ## 5. Technology Stack
 - **Languages**: Python 3.x
 - **API**: FastAPI, WebSocket, Uvicorn
-- **LLM**: Ollama (Local) / Google Gemini API
+- **LLM**: Ollama (Local) / Google Gemini / Groq API
 - **STT**: RealtimeSTT (Whisper)
 - **TTS**: Edge-TTS + custom FFmpeg pipeline
 - **Audio**: PyAudio, SoundDevice
