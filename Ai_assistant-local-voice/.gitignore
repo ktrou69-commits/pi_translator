@@ -4,5 +4,6 @@ __pycache__/
 .env
 .env.local
 .env.*
+!.env.*.example
 realtimesst.log
 memory.json
