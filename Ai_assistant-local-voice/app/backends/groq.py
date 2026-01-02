@@ -25,6 +25,19 @@ class GroqBackend(BaseBackend):
         
         ПАМЯТЬ О ПОЛЬЗОВАТЕЛЕ:
         {facts_list}
+
+        ПРИОРИТЕТНЫЕ ССЫЛКИ (используй их для open_url):
+        - YouTube: https://www.youtube.com
+        - TikTok: https://www.tiktok.com
+        - Новости: https://news.google.com/home?hl=ru&gl=RU&ceid=RU%3Aru
+
+        ПРИОРИТЕТНЫЕ ПРИЛОЖЕНИЯ (используй их для run_app):
+        - Telegram
+        - Antigravity
+        - Windsurf
+        - Заметки
+        - Safari
+        - Google Chrome
         
         ИНСТРУКЦИИ:
         - Будь КРАТКИМ. Твои сообщения читаются пользователю вслух. Отвечай не более 1-2 предложений.
@@ -32,9 +45,12 @@ class GroqBackend(BaseBackend):
         - Не рассказывай пользователю, какой метод ты используешь. Сразу дай подтверждение и выполняй.
         - Если команда понятна (открой, запусти), вызывай инструмент НЕМЕДЛЕННО.
         - Используй "Память о пользователе" для контекста, но никогда не читай её целиком.
-        - ТОЛЬКО ПРОСТОЙ ТЕКСТ. Никакого Markdown (никаких **, #, `), никаких специальных символов или формул.
+        - ИНСТРУМЕНТЫ: Используй их.
+        - ЕСЛИ ИНСТРУМЕНТ НЕ СРАБОТАЛ: Напиши команду текстом в начале ответа.
+          Формат: "CMD_OPEN_URL: ссылка" или "CMD_RUN_APP: название".
+          Пример: "CMD_OPEN_URL: https://youtube.com Открываю ютуб."
+        - ТЕКСТ ОТВЕТА: Только простой текст.
         - Произноси специальные символы словами (например, "градусов" вместо °).
-        - Для чисто текстовых задач (цитаты, ответы на вопросы) инструменты НЕ ИСПОЛЬЗУЙ.
         """
         
         messages = [
@@ -54,6 +70,8 @@ class GroqBackend(BaseBackend):
                             "parameters": tool["parameters"]
                         }
                     })
+                # Debug print to verify tools structure
+                # print(f"🔧 [Groq-Debug] Sending tools: {json.dumps(groq_tools, indent=2)}")
 
             params = {
                 "model": self.model_name,
@@ -76,11 +94,21 @@ class GroqBackend(BaseBackend):
                 yield from self._process_stream(stream)
             except Exception as e:
                 error_msg = str(e)
-                if "Failed to call a function" in error_msg or "tool call" in error_msg.lower():
-                    print(f"🔄 [Groq-Recovery]: Tool error detected, retrying without tools...")
-                    # Silent retry without tools
-                    stream = run_completion(use_tools=False)
-                    yield from self._process_stream(stream)
+                print(f"⚠️ [Groq-Debug]: Full Error: {error_msg}") # Log full error for debugging
+                if "Failed to call a function" in error_msg or "tool call" in error_msg.lower() or "400" in error_msg:
+                    print(f"⚠️ [Groq-Retry]: Tool error, retrying WITH tools (Simple Mode)...")
+                    
+                    # Retry ONCE with tools but a stricter/simpler prompt context (sometimes helps model focus)
+                    # We reuse run_completion(use_tools=True) but could theoretically simplify messages if needed.
+                    # For now, just a clean retry often fixes transient model glitches.
+                    try:
+                         stream = run_completion(use_tools=True)
+                         yield from self._process_stream(stream)
+                    except Exception as e2:
+                        print(f"🔄 [Groq-Recovery]: Second failure, falling back to TEXT ONLY...")
+                        # If that fails, THEN fallback to text-only to save the conversation
+                        stream = run_completion(use_tools=False)
+                        yield from self._process_stream(stream)
                 else:
                     raise e
 
@@ -105,7 +133,7 @@ class GroqBackend(BaseBackend):
             if delta.content:
                 current_text += delta.content
 
-        # Yield tool calls
+        # Yield tool calls (API based)
         for idx in sorted(tool_calls.keys()):
             tc = tool_calls[idx]
             try:
@@ -113,11 +141,37 @@ class GroqBackend(BaseBackend):
                 yield MockFunctionCall(tc["name"], args)
             except: pass
 
-        # Clean and yield text
+        # Clean and yield text (and check for text-based tool calls)
         if current_text:
             import re
+            
+            # 1. Parse text-based tool calls (fallback)
+            # Simple Pattern: CMD_TOOL: arg
+            tool_patterns = [
+                (r'CMD_OPEN_URL:\s*([^\s]+)', 'open_url', 'url'),
+                (r'CMD_RUN_APP:\s*(.+?)(?:\.|$)', 'run_app', 'app_name'),
+                (r'open_url\((.*?)\)', 'open_url', 'url'), # Keep legacy just in case
+            ]
+            
+            for pattern, tool_name, arg_name in tool_patterns:
+                matches = re.finditer(pattern, current_text)
+                for match in matches:
+                    arg_value = match.group(1).strip()
+                    # Clean quotes and punctuation
+                    arg_value = arg_value.split()[0] if tool_name == 'open_url' else arg_value # for URL take first word
+                    arg_value = re.sub(r'["\',.]$', '', arg_value) # remove trailing quotes/dots
+                    
+                    print(f"🕵️‍♂️ [Groq-Text-Parse]: Detect SIMPLE {tool_name}('{arg_value}')")
+                    yield MockFunctionCall(tool_name, {arg_name: arg_value})
+            
+            # 2. Remove tool strings from spoken text
+            for pattern, _, _ in tool_patterns:
+                current_text = re.sub(pattern, '', current_text)
+
+            # 3. Clean other artifacts
             current_text = re.sub(r'<function.*?>.*?</function>', '', current_text, flags=re.DOTALL)
             current_text = re.sub(r'\[🛠️.*?\]', '', current_text)
+            
             if current_text.strip():
                 for sentence in generate_sentences([current_text]):
                     yield sentence
