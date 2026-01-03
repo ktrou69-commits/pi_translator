@@ -157,10 +157,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 await websocket.send_json({"end": True})
                 print("✅ Response sent completely.")
-                # Run memory observer in background (non-blocking)
-                background_tasks = BackgroundTasks()
-                background_tasks.add_task(backend.memory_observer, text, memory, memory_manager.save_memory)
-                await backend.memory_observer(text, memory, memory_manager.save_memory)
+                
+                # Run memory observer in background (non-blocking) using asyncio.to_thread
+                # This prevents it from blocking the event loop or the websocket
+                asyncio.create_task(asyncio.to_thread(
+                    backend.memory_observer, 
+                    text, 
+                    memory, 
+                    memory_manager.save_memory
+                ))
                 
         except asyncio.CancelledError:
             print("🛑 Processing task CANCELLED by new request")
