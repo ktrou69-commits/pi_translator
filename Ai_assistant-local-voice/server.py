@@ -112,6 +112,61 @@ async def websocket_endpoint(websocket: WebSocket):
     tts = websocket.app.state.tts_stream
 
     audio_chunks_received = 0
+    current_processing_task: asyncio.Task = None
+
+    async def process_voice_command(text: str):
+        """Async task to process voice command and generate response"""
+        try:
+            if text.strip():
+                print(f"🗣️  User: {text}")
+                await websocket.send_json({"user_transcription": text})
+                
+                memory = memory_manager.load_memory()
+                
+                print(f"🤖 AI ({args.profile}) is generating response...")
+                for response_item in backend.chat_stream(text, memory, tools=TOOL_DEFINITIONS):
+                    # Check for cancellation
+                    await asyncio.sleep(0) 
+                    
+                    if isinstance(response_item, str):
+                        # This is text for TTS
+                        print(f"⏩ Sending sentence: {response_item}")
+                        await websocket.send_json({"assistant_text": response_item})
+                        
+                        chunk_count = 0
+                        async for chunk in tts.engine.async_generate(response_item):
+                            await websocket.send_bytes(chunk)
+                            chunk_count += 1
+                        print(f"🔊 Sent {chunk_count} audio chunks for sentence.")
+                    else:
+                        # This is a FunctionCall object from the LLM
+                        func_name = response_item.name
+                        func_args = response_item.args
+                        print(f"🛠️  Model requested tool: {func_name}({func_args})")
+                        
+                        # Execute action
+                        if func_name == "open_url":
+                            executor.open_url(**func_args)
+                        elif func_name == "open_path":
+                            executor.open_path(**func_args)
+                        elif func_name == "run_app":
+                            executor.run_app(**func_args)
+                        
+                        # We can send a notification to the client that a tool was used
+                        await websocket.send_json({"assistant_text": f"[🛠️ {func_name}]"})
+                
+                await websocket.send_json({"end": True})
+                print("✅ Response sent completely.")
+                # Run memory observer in background (non-blocking)
+                background_tasks = BackgroundTasks()
+                background_tasks.add_task(backend.memory_observer, text, memory, memory_manager.save_memory)
+                await backend.memory_observer(text, memory, memory_manager.save_memory)
+                
+        except asyncio.CancelledError:
+            print("🛑 Processing task CANCELLED by new request")
+            raise
+        except Exception as e:
+             print(f"❌ Error in processing task: {e}")
 
     try:
         while True:
@@ -126,6 +181,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if request_data.get("start"):
                     print("🎤 Recording started...")
+                    # Cancel previous task if valid
+                    if current_processing_task and not current_processing_task.done():
+                        print("⚡ Cancelling previous processing task!")
+                        current_processing_task.cancel()
+                        # Optional: Wait for it to clear? Usually not needed if we fire-and-forget
+                        
+                    # Stop any current TTS playback (best effort)
+                    if hasattr(tts.engine, "stop"):
+                        tts.engine.stop()
+
                     audio_chunks_received = 0
                     stt.start()
                 
@@ -134,49 +199,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     stt.stop()
                     user_text = stt.text()
                     
-                    if user_text.strip():
-                        print(f"🗣️  User: {user_text}")
-                        await websocket.send_json({"user_transcription": user_text})
-                        
-                        memory = memory_manager.load_memory()
-                        
-                        print(f"🤖 AI ({args.profile}) is generating response...")
-                        for response_item in backend.chat_stream(user_text, memory, tools=TOOL_DEFINITIONS):
-                            if isinstance(response_item, str):
-                                # This is text for TTS
-                                print(f"⏩ Sending sentence: {response_item}")
-                                await websocket.send_json({"assistant_text": response_item})
-                                
-                                chunk_count = 0
-                                async for chunk in tts.engine.async_generate(response_item):
-                                    await websocket.send_bytes(chunk)
-                                    chunk_count += 1
-                                print(f"🔊 Sent {chunk_count} audio chunks for sentence.")
-                            else:
-                                # This is a FunctionCall object from the LLM
-                                func_name = response_item.name
-                                func_args = response_item.args
-                                print(f"🛠️  Model requested tool: {func_name}({func_args})")
-                                
-                                # Execute action
-                                if func_name == "open_url":
-                                    executor.open_url(**func_args)
-                                elif func_name == "open_path":
-                                    executor.open_path(**func_args)
-                                elif func_name == "run_app":
-                                    executor.run_app(**func_args)
-                                
-                                # We can send a notification to the client that a tool was used
-                                await websocket.send_json({"assistant_text": f"[🛠️ {func_name}]"})
-                        
-                        await websocket.send_json({"end": True})
-                        print("✅ Response sent completely.")
-                        backend.memory_observer(user_text, memory, memory_manager.save_memory)
-                
+                    # Start new processing task
+                    current_processing_task = asyncio.create_task(process_voice_command(user_text))
+                    
     except WebSocketDisconnect:
         print("👋 WebSocket connection closed")
-    except Exception as e:
-        print(f"❌ WebSocket error: {e}")
         import traceback
         traceback.print_exc()
 
